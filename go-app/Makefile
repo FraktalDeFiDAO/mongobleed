@@ -2,6 +2,7 @@
 
 BINARY_NAME=mongobleed
 SOURCE_FILE=mongobleed.go
+TEST_FILE=test_fix.go
 
 # Default target
 all: build
@@ -34,6 +35,10 @@ clean:
 test:
 	go test -v
 
+# Run deduplication fix test
+test-fix:
+	go run $(TEST_FILE)
+
 # Install dependencies (none required for standard library)
 deps:
 	go mod tidy
@@ -63,6 +68,7 @@ help:
 	@echo "  build-darwin - Build for macOS (amd64, arm64)"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  test        - Run tests"
+	@echo "  test-fix    - Run deduplication fix test"
 	@echo "  fmt         - Format code"
 	@echo "  vet         - Run go vet"
 	@echo "  lint        - Run golint"
@@ -74,5 +80,8 @@ help:
 	@echo "Example:"
 	@echo "  make build"
 	@echo "  ./$(BINARY_NAME) --host localhost --max-offset 50000"
+	@echo ""
+	@echo "Test the fix:"
+	@echo "  make test-fix"
 
-.PHONY: all build build-all build-linux build-windows build-darwin clean test deps fmt vet lint help
+.PHONY: all build build-all build-linux build-windows build-darwin clean test test-fix deps fmt vet lint help

